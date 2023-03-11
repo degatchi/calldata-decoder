@@ -1,14 +1,13 @@
 pub mod constants;
-pub mod type_guesser;
 pub mod tests;
+pub mod type_guesser;
 
 use constants::*;
 use ethers::types::{U128, U256};
 use type_guesser::*;
 
-
 // ------------------------------------------------------------
-//  Helpers 
+//  Helpers
 // ------------------------------------------------------------
 
 /// Converts `calldata` into chunks of `size`.
@@ -86,7 +85,7 @@ pub fn rearrange_chunks(
 pub fn last_raw(params: &Vec<String>, current: usize) -> Option<String> {
     match current == 0 {
         true => None,
-        false => Some(params[current - 1].clone())
+        false => Some(params[current - 1].clone()),
     }
 }
 
@@ -104,10 +103,11 @@ pub fn next_raw(params: &Vec<String>, current: usize) -> Option<String> {
 }
 
 /// Guesses the potential types of the parameter by checking specific patterns.
-/// 
+///
 /// ## Params
-/// 1. param - 32 byte str representation of parameter. 
-/// 
+/// 1. param - 32 byte str representation of parameter.
+///            e.g, "000000000000000000000000000000000000000000831162ce86bc88052f80fd"
+///
 /// ## Returns
 /// 1. All potential types the parameter can be.
 pub fn guess_param_type(param: &str) -> ParamTypes {
@@ -148,11 +148,10 @@ pub fn guess_param_type(param: &str) -> ParamTypes {
 
     // If the value can be converted to U256
     if let Ok(v) = U256::from_str_radix(&param, 16) {
-
         // If value is 0 or 1.
         if v <= U256::one() {
             return ParamTypes::new(vec![Types::Uint8, Types::Bytes1, Types::Bool]);
-        } 
+        }
 
         // If value is of type `uint8`.
         if v <= U256::from_dec_str("8").unwrap() {
@@ -164,9 +163,8 @@ pub fn guess_param_type(param: &str) -> ParamTypes {
     ParamTypes::new(vec![Types::Uint, Types::Int, Types::Bytes])
 }
 
-
 // ------------------------------------------------------------
-//  Calldata 
+//  Calldata
 // ------------------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -181,7 +179,7 @@ pub struct Calldata {
     pub main_details: Vec<Params>,
     /// The params found after selector is sliced out.
     raw_params: Vec<String>,
-    /// 
+    ///
     params: Vec<String>,
     /// Method calls extending from our method.
     /// Includes potential types guessed.
@@ -216,7 +214,6 @@ impl Calldata {
     /// Parses the method selector the calldata is being sent to.
     /// Prepares the raw calldata params to be parsed.
     pub fn parse_selector(&mut self) {
-
         // Remove prefix.
         if self.calldata.contains("0x") {
             self.calldata = self.calldata.replace("0x", "");
@@ -230,7 +227,7 @@ impl Calldata {
             self.selector = self.raw_params[0].split_at(8).0.to_string();
             // Replace it with 0s to just have input.
             self.raw_params[0] = self.raw_params[0].replace(&self.selector, "");
-        } 
+        }
         // Else, calldata is of odd length.
         else {
             // Separate calldata into 1-byte chunks.
@@ -266,7 +263,6 @@ impl Calldata {
         let mut params: (Vec<String>, bool) = (self.raw_params.clone(), false);
         let mut skipping = 0;
 
-
         // TODO...CREATE OFFSET STRUCT
         // TODO...CREATE PC counter/offset identifier for when we reach it to set length
         // ...
@@ -281,12 +277,12 @@ impl Calldata {
                 i += skipping;
                 skipping = 0;
             }
-            
+
             if &params.0[i] == EMPTY_32 {
                 params.0 = add_padding(params.0, i, true);
                 i += 1;
             }
-            
+
             let raw_param = &params.0[i];
             let trimmed = raw_param.trim_start_matches('0').to_string();
 
@@ -300,11 +296,9 @@ impl Calldata {
                 // Check if last param was a length type.
                 // They indicate the start of a dynamic type (string, bytes, or array).
                 if let Some(last) = last_raw(&params.0, i) {
-
                     // Trim the last param.
                     let last_trimmed = last.trim_start_matches('0').to_string();
                     if let Ok(v) = U128::from_str_radix(&last_trimmed, 16) {
-                        
                         // Extract selector + params.
                         if let Some(skip) = self.parse_len(&params.0, i, v.as_usize()) {
                             // println!("selector found");
@@ -317,14 +311,13 @@ impl Calldata {
                     }
                 }
             }
-
             // Offsets/lengths never have selectors
             // Therefore, we check common offset/length sizes.
             else if trimmed.len() <= 4 {
                 // Check if value is for dynamic type.
                 if let Ok(v) = U128::from_str_radix(&trimmed, 16) {
                     // Check if offset by checking if
-                    // - below safety net length, since they probably wont go that high. 
+                    // - below safety net length, since they probably wont go that high.
                     // - divisible by 32 bytes (0x20).
                     if v < U128::from(i * 64 + 1920) && v % 64 == U128::from(0) {
                         offsets.push((i, v / 64, 0));
@@ -366,7 +359,6 @@ impl Calldata {
             // println!("to skip {}", (len - 8) * 2 / 64);
             return Some((len - 8) * 2 / 64);
         }
-
         // TODO..FINISH THIS OFF
         // How to cut out strings????
         // If remainder is 56, probably a string/fn selector.
@@ -394,15 +386,147 @@ impl Calldata {
                 params.types = types;
             }
         }
-        // Else, our main method call doesn't call anything else.
-        else {
-            // let mut types: Vec<ParamTypes> = vec![];
-            // for param in self.params.iter() {
-            //     let param_types = guess_param_type(param.as_str());
-            //     types.push(param_types);
-            // }
 
-            // params.types = types;
+        // We try to decode the main body's params
+        // e.g. `transferBundle(address from, struct[] bundles, address to)`
+        let mut types: Vec<ParamTypes> = vec![];
+        for i in 0..self.params.len() {
+            if i > 0 {
+                // if self.params[i]
+                unimplemented!();
+            }
+
+            let param_types = guess_param_type(i);
+            types.push(param_types);
+        }
+
+        // params.types = types;
+    }
+
+    /// Detects if the parameter is an offset.
+    /// Note: An offset means where the word starts from the start of that word.
+    ///
+    /// ## Returns
+    /// 1. Option if a potential length was found.
+    ///
+    /// ## Example:
+    ///
+    /// [0] 0000000000000000000000000000000000000000000000000000000000000020
+    /// ^ Indicates the length starts at [2]
+    pub fn is_offset(&self, i: usize) -> Option<usize> {
+        // Trim padded zeros from value.
+        let trimmed = &self.params[i].trim_start_matches('0').to_string();
+
+        // Offsets + lengths never have selectors
+        // Therefore, we check common offset/length sizes.
+        if trimmed.len() <= 4 {
+            // Check if value is for dynamic type.
+            if let Ok(v) = U128::from_str_radix(&trimmed, 16) {
+                // Check if offset by checking if
+                // - divisible by 32 bytes (0x20).
+                if v % 64 == U128::from(0) {
+                    // If 32, the next slot (i) is the length.
+                    let to_skip = (v / 32).as_usize();
+
+                    // Make sure offset value exists...
+                    let param_len = &self.params.len() - 1;
+                    let len_i = i + to_skip;
+
+                    // Does the word's element (i) exist?
+                    // E.g. 12 >= 8 (len_i)
+                    // E.g. 12 >= 12 (len_i)
+                    if param_len >= len_i {
+                        // Convert the potential length param to U128.
+                        let trimmed_len =
+                            &self.params[i + to_skip].trim_start_matches('0').to_string();
+
+                        if let Ok(len) = U128::from_str_radix(&trimmed_len, 16) {
+                            let len_v = len.as_usize();
+
+                            // Array detection
+                            // If `len_i + len_v` words exists...
+                            if param_len >= len_i + len_v {
+                                return None;
+                            }
+
+                            // String detection
+                            if len_v % 2 == 0 {
+                                let last_i;
+
+                                // If len_v is 32
+                                if len_v > 32 {
+                                    // Sanity check of each element besides last one.
+                                    for i in 0..len_v - 1 {
+                                        // Separate element `i` into 4 byte sections.
+                                        let chunks = chunkify(&self.params[len_i + i], 8);
+
+                                        // TODO...EMPTY STRING DETECTION
+                                        // Make sure full word isn't empty
+                                        if chunks[0] == MASK_4 && chunks[7] == MASK_4 {
+                                            return None;
+                                        }
+                                    }
+
+                                    last_i = len_v;
+                                } else {
+                                    last_i = len_i + len_v;
+                                }
+
+                                // Check remaining bytes of last element.
+                                // E.g. 50 % 32 = 18 * 2 = 36
+                                let last_element_len = len_v % 32 * 2;
+                                // E.g. 36 of 64
+                                let padding_amount = 64 - last_element_len;
+                                let last_element = &self.params[len_i + last_i];
+
+                                // If padding, check w/ mask on right side.
+                                if padding_amount != 0 {
+                                    let padding = last_element.split_off(padding_amount);
+                                    let mask = "0".repeat(padding_amount);
+                                    if padding != mask {
+                                        return None;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+}
+
+#[derive(Clone)]
+pub enum DynamicKind {
+    String,
+    Array,
+}
+
+#[derive(Clone)]
+pub struct DynamicType {
+    kind: DynamicKind,
+    offset_pc: usize,
+    offset_v: usize,
+    length_pc: usize,
+    length_v: usize,
+}
+
+impl DynamicType {
+    pub fn new(
+        kind: DynamicKind,
+        offset_pc: usize,
+        offset_v: usize,
+        length_pc: usize,
+        length_v: usize,
+    ) -> Self {
+        Self {
+            kind,
+            offset_pc,
+            offset_v,
+            length_pc,
+            length_v,
         }
     }
 }
